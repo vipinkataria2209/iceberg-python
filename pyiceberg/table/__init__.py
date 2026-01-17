@@ -134,6 +134,15 @@ from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.properties import property_as_bool
 
+# Vector search extension (optional dependency)
+try:
+    from pyiceberg.table.vector import vector as _vector_method
+
+    VECTOR_AVAILABLE = True
+except ImportError:
+    VECTOR_AVAILABLE = False
+    _vector_method = None  # type: ignore
+
 if TYPE_CHECKING:
     import bodo.pandas as bd
     import daft
@@ -145,6 +154,7 @@ if TYPE_CHECKING:
     from pyiceberg_core.datafusion import IcebergDataFusionTable
 
     from pyiceberg.catalog import Catalog
+    from pyiceberg.table.vector import VectorTable
 
 ALWAYS_TRUE = AlwaysTrue()
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
@@ -1592,6 +1602,55 @@ class Table:
             metadata_location=self.metadata_location,
             file_io_properties=self.io.properties,
         ).__datafusion_table_provider__()
+
+    def vector(
+        self,
+        embedding_column: str,
+        dimension: int,
+        id_column: str = "id",
+        text_column: str | None = None,
+        embedding_model: str | None = None,
+        index_strategy: str = "auto",
+        metric: str = "cosine",
+    ) -> VectorTable:
+        """Enable vector search on this Iceberg table.
+
+        Args:
+            embedding_column: Name of column containing embeddings
+            dimension: Embedding dimension
+            id_column: Name of ID column (default: "id")
+            text_column: Name of text column (optional)
+            embedding_model: Model for auto-embedding (optional)
+            index_strategy: FAISS index type or "auto" (default: "auto")
+            metric: Distance metric ("cosine" or "l2", default: "cosine")
+
+        Returns:
+            VectorTable instance with search capabilities
+
+        Example:
+            >>> table = catalog.load_table("docs.embeddings")
+            >>> vector_table = table.vector(
+            ...     embedding_column="embedding",
+            ...     dimension=768,
+            ...     embedding_model="sentence-transformers/all-MiniLM-L6-v2"
+            ... )
+            >>> results = vector_table.search("PyIceberg features", top_k=5)
+        """
+        if not VECTOR_AVAILABLE:
+            raise ImportError(
+                "Vector search requires optional dependencies. "
+                "Install with: pip install 'pyiceberg[vector]'"
+            )
+        return _vector_method(
+            self=self,
+            embedding_column=embedding_column,
+            dimension=dimension,
+            id_column=id_column,
+            text_column=text_column,
+            embedding_model=embedding_model,
+            index_strategy=index_strategy,
+            metric=metric,
+        )
 
 
 class StaticTable(Table):
